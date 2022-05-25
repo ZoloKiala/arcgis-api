@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src="https://js.arcgis.com/4.4/"></script>
+    <link rel="stylesheet" href="https://js.arcgis.com/4.4/esri/css/main.css">
+
+
+</head>
+<body>
+
+    Service: <select name="" id="lstservice"></select> <br> <br>
+    Basemap: <select id="buttons"></select> <br> <br>
+
+    <table border = 1>
+        <tr>
+            <td valign = "top">
+                <div id="toc">
+
+                </div>
+            </td>
+
+            <td>
+                <div  id="mapview" style="width: 800px; height:500px">Map goes here</div>
+            </td>
+
+        </tr>
+
+        <tr>
+          <td colspan=2> 
+            <div id="attributetable">
+            Attribute table  
+            </div>  
+        </td> 
+        </tr>
+
+
+
+    </table>
+   
+  
+
+
+<script>
+    let mapview
+    let viewOptions
+ 
+    let layer
+    let r
+    let Request
+    let selectedService
+    const DEFAULT_BASEMAP = 'streets'
+    const DEFAULT_SERVICE = "Water_Network"
+
+
+require(["esri/Map", 
+"esri/views/MapView", 
+"esri/request",
+ "esri/layers/MapImageLayer", 
+ "esri/widgets/Legend",
+ "esri/widgets/Search"],
+function (
+        Map, 
+        MapView, 
+        esriRequest,
+        MapLayer, 
+        Legend,
+        Search) 
+        
+{
+        Request = esriRequest;
+
+        generateBasemaps();
+
+        map = new Map({basemap:DEFAULT_BASEMAP})
+        viewOptions = {container: "mapview", map:map, zoom:5,
+            center: [-3.0240568048875898, 23.95302941679887], scale:500}
+        mapview = new MapView(viewOptions);
+
+        let legend = new Legend ({view:mapview});
+        mapview.ui.add(legend, "bottom-left");
+
+        let search = new Search ({view: mapview});
+        mapview.ui.add(search, "top-left");
+            
+        //query the sample server and list all map services in a dropdown
+        populateMapservice();
+
+    /// Populate services
+        function populateMapservice ()
+            {
+
+                let url =  "https://sampleserver6.arcgisonline.com/arcgis/rest/services?f=json";
+                let options = {responseType: 'json'};
+
+                Request(url, options).then
+
+                    (
+                        response => 
+                            {
+                                let result = response.data;
+                                let lstservice = document.getElementById("lstservice");
+
+                                //Set event listerner on change
+                                lstservice.addEventListener("change", onChangeServiceLayerMap)
+
+                                for (let i =0; i < result.services.length; i++)
+                                    {
+                                        let option = document.createElement("option");
+                                        option.textContent = result.services[i].name;
+                                        if (DEFAULT_SERVICE == result.services[i].name)
+                                            { option.selected=true;}
+                                        
+                                        lstservice.appendChild(option);
+                                    }
+                                    onChangeServiceLayerMap();
+
+                            }
+
+                    )
+
+
+            }
+
+
+        function onChangeServiceLayerMap ()
+        
+            {
+                selectedService = lstservice.options[lstservice.selectedIndex].textContent;
+                layer = new MapLayer({url:"https://sampleserver6.arcgisonline.com/arcgis/rest/services/" + selectedService
+                + "/MapServer"});
+
+                map.removeAll();
+                map.add(layer);
+
+                //Wait until the layer is loaded
+                layer.then(buildToc);      
+                }
+
+            }
+
+  
+    );
+
+function buildToc() 
+    {
+        let toc = document.getElementById("toc");
+        toc.innerHTML = "";
+        let layerlist = document.createElement("ul");
+        toc.appendChild(layerlist);
+
+        //populate list
+        populateLayerRecursive(layer, layerlist);
+    
+        mapview.goTo(layer.fullExtent);
+    }
+    /// Populate layer subitems in the input element
+
+function getCount(layerid, featureCount)
+
+ {
+    let queryurl = "https://sampleserver6.arcgisonline.com/arcgis/rest/services/" + selectedService
+            + "/MapServer/" + layerid + "/query";
+        let queryOptions = 
+        {
+            responseType: "json",
+            query: {
+                    f: "json",
+                    where: "1=1",
+                    returnCountOnly: true
+                    }
+        }
+
+    Request(queryurl, queryOptions).then 
+        (response => featureCount(response.data.count),
+        response => featureCount(0) );
+        
+}
+
+
+function populateLayerRecursive(thislayer, layerlist) 
+{
+
+            let chk = document.createElement("input");
+            chk.type = "checkbox";
+            chk.value = thislayer.id;
+            chk.checked = thislayer.visible;
+
+            chk.addEventListener("click", e =>
+           
+                // let clickedlayer = thislayer.findSublayerById(Number(e.target.value));
+                thislayer.visible  = e.target.checked
+            )
+
+            let lbl = document.createElement("label");
+            lbl.textContent = thislayer.title + "     ";
+
+            let btn = document.createElement("button");
+            btn.textContent = "view";
+            // getCount(thislayer.id, btn);
+
+
+            // on click, open the attribute table
+            btn.layerid = thislayer.id
+            btn.addEventListener("click", openAttributesTable);
+
+            let layeritem = document.createElement("li");
+            layeritem.appendChild(chk);
+            layeritem.appendChild(lbl);
+            layeritem.appendChild(btn);
+
+            layerlist.appendChild(layeritem);  
+              
+
+            if (thislayer.sublayers !=null && thislayer.sublayers.items.length > 0)
+            {
+                let newlist = document.createElement("ul");
+                layerlist.appendChild(newlist);
+                for (let i = 0; i < thislayer.sublayers.length; i++)  
+                {
+                    populateLayerRecursive(thislayer.sublayers.items[i], newlist);
+
+                }
+
+
+
+            }
+
+                                      
+}
+
+
+
+    /// Generate list of buttons for basemaps
+    function generateBasemaps() {
+    
+            let basemaps = [];
+            basemaps.push("satellite");
+            basemaps.push("topo");
+            basemaps.push("osm");
+            basemaps.push("streets");
+            basemaps.push("topo-vector");
+
+            let setBasemap = function (e) {
+                let list = e.target;
+                let selectedBasemap = list.options[list.selectedIndex].textContent;
+                map.basemap = selectedBasemap;
+            }
+          
+
+            let cmbbasemaps = document.getElementById("buttons");
+            cmbbasemaps.addEventListener("change", setBasemap)
+
+
+            for (i=0; i < basemaps.length; i++) 
+
+                {
+                    
+                    let option = document.createElement("option");
+                    option.id = basemaps[i];
+                    option.textContent = basemaps[i];
+                    if (basemaps[i] == DEFAULT_BASEMAP) option.selected = true;
+                    cmbbasemaps.appendChild(option);  
+                }
+
+        }
+ 
+function openAttributesTable(e) {
+            
+            let layerid = e.target.layerid;
+            let featureCount = 0;
+            getCount(layerid, c => 
+                {featureCount = c;
+                populateAttributesTable(layerid, featureCount)
+                });
+
+        }
+        
+
+
+//poplolate the attribute of a given layer
+function populateAttributesTable(layerid, featureCount) 
+
+{
+
+alert(featureCount);
+
+
+
+    let queryurl = "https://sampleserver6.arcgisonline.com/arcgis/rest/services/" + selectedService
+            + "/MapServer/" + e.target.layerid + "/query";
+       
+    let attributetable = document.getElementById("attributetable");
+    attributetable.innerHTML = "";
+
+
+    let queryOptions = 
+        {
+            responseType: "json",
+            query: {
+                    f: "json",
+                    where: "1=1",
+                    returnCountOnly: false,
+                    outFields: "*",
+                    resultRecordCount: "10"
+                    }
+        }
+
+    Request(queryurl, queryOptions).then (response => 
+
+    {
+
+        //alert(response.data.fields.length);
+        let table = document.createElement('table');
+        table.border = 2;
+        let header =document.createElement("tr");
+        table.appendChild(header);
+
+        for (let i = 0; i < response.data.fields.length; i++)
+        {
+            let column = document.createElement("td");
+            column.textContent = response.data.fields[i].alias;
+            header.appendChild(column);
+        }
+
+        //loop through all features
+
+        for (let j = 0; j < response.data.features.length; j++)
+         {
+           
+            let feature = response.data.features[j];
+            let row = document.createElement("tr");
+            table.appendChild(row);
+            for (let i = 0; i < response.data.fields.length; i++)
+             {
+                let field = response.data.fields[i];
+                let column = document.createElement("td");
+                
+                
+                if (field.type == "esriFieldTypeDate") {
+                   let d = new Date(feature.attributes[field.name]);
+                   column.textContent = d;
+                }
+                else
+                column.textContent = feature.attributes[field.name];
+                
+                
+                row.appendChild(column);
+                
+            }
+            
+        }    
+
+        attributetable.appendChild(table);
+
+
+        }, response => el.style.visibility = "hidden");
+
+}
+
+
+</script>
+   
+</body>
+</html>
